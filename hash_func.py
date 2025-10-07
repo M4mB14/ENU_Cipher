@@ -62,29 +62,6 @@ def compress32(state32: str, block32: str, verbose: bool=False) -> str:
     new_state = format(new_state_int, '032b')
     return new_state
 
-def parse_iv_input(s: str) -> str:
-    s = s.strip()
-    if re.fullmatch(r'[01]+', s):
-        if len(s) > 32:
-            raise ValueError("IV длиннее 32 бит — сократите ввод.")
-        return s.zfill(32)
-    if s.lower().startswith('0x'):
-        val = int(s, 16)
-        if val >= (1 << 32):
-            raise ValueError("IV не влезает в 32 бита.")
-        return format(val, '032b')
-    if re.fullmatch(r'[0-9a-fA-F]+', s) and re.search(r'[a-fA-F]', s):
-        val = int(s, 16)
-        if val >= (1 << 32):
-            raise ValueError("IV не влезает в 32 бита.")
-        return format(val, '032b')
-    if re.fullmatch(r'\d+', s):
-        val = int(s, 10)
-        if val >= (1 << 32):
-            raise ValueError("IV не влезает в 32 бита.")
-        return format(val, '032b')
-    raise ValueError("Неудачный формат IV. Ввод должен быть бинарной строкой, десятичным или 16-ричным значением.")
-
 def parse_plaintext_to_bits(s: str) -> str:
     s = s.strip()
     if re.fullmatch(r'[01]+', s):
@@ -109,29 +86,20 @@ def parse_plaintext_to_bits(s: str) -> str:
     b = s.encode('utf-8')
     return bytes_to_bits(b)
 
+# === Фиксированный IV ===
+FIXED_IV = "11110000010101010000111111000000"  # 32 бита
+
 def run_interactive():
     print("=== Hashervon (интерактивное хэширование) ===")
-    iv_bits = None
+    print(f"Фиксированный IV: {FIXED_IV} (0x{format(int(FIXED_IV,2),'08x')})")
 
     while True:
         print("\nВыберите действие:")
-        print(" 1 - Задать вектор инициализации (IV, 32 бита)")
-        print(" 2 - Захэшировать текст")
-        print(" 3 - Выйти")
-        choice = input("Введите 1/2/3: ").strip()
+        print(" 1 - Захэшировать текст")
+        print(" 2 - Выйти")
+        choice = input("Введите 1/2: ").strip()
 
         if choice == '1':
-            iv_in = input("Введите IV (бинарно, или 0xHEX, или DEC): ").strip()
-            try:
-                iv_bits = parse_iv_input(iv_in)
-                print(f"IV задан: {iv_bits} (bin), 0x{format(int(iv_bits,2),'08x')}")
-            except Exception as e:
-                print("Ошибка при разборе IV:", e)
-
-        elif choice == '2':
-            if iv_bits is None:
-                print("IV не задан — сначала введите IV (пункт 1).")
-                continue
             plain_in = input("Введите открытый текст (текст / DEC / 0xHEX / бинарно): ")
             bits = parse_plaintext_to_bits(plain_in)
             if bits == '':
@@ -145,7 +113,7 @@ def run_interactive():
             print(f"Исходные биты (len={len(bits)}): {bits}")
             print(f"Количество 32-бит блоков: {len(blocks)}")
 
-            state = iv_bits
+            state = FIXED_IV
             for idx, blk in enumerate(blocks, start=1):
                 print(f"\n--- Блок {idx}/{len(blocks)} ---")
                 print(f" block = {blk} (0x{format(int(blk,2),'08x')})")
@@ -154,15 +122,15 @@ def run_interactive():
                 print(f" new state = {state} (0x{format(int(state,2),'08x')})")
 
             print("\n=== Хэширование завершено ===")
-            print(f"IV (начальный)   : {iv_bits}  (0x{format(int(iv_bits,2),'08x')})")
-            print(f"Final hash (bin)  : {state}")
-            print(f"Final hash (hex)  : 0x{format(int(state,2),'08x')}")
+            print(f"IV (фиксированный): {FIXED_IV}  (0x{format(int(FIXED_IV,2),'08x')})")
+            print(f"Final hash (bin):  {state}")
+            print(f"Final hash (hex):  0x{format(int(state,2),'08x')}")
 
-        elif choice == '3':
+        elif choice == '2':
             print("Выход. Пока.")
             sys.exit(0)
         else:
-            print("Неправильный выбор, введите 1, 2 или 3.")
+            print("Неправильный выбор, введите 1 или 2.")
 
 if __name__ == '__main__':
     try:
