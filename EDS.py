@@ -1,124 +1,105 @@
+from rsa import generate_keys, encrypt, decrypt, mod_pow
+from hash_func import parse_plaintext_to_bits, compress256, FIXED_IV_BITS, chunk_bits
 import sys
-import importlib.util
-from pathlib import Path
-import binascii
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import rsa, padding
-from cryptography.hazmat.backends import default_backend
-
-HASH_MODULE_PATH = "D:\Study\Cods\Kriptology\hash_func.py"
-spec = importlib.util.spec_from_file_location("hash_func_user", HASH_MODULE_PATH)
-hash_mod = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(hash_mod)
 
 
-def compute_hash_bytes_from_input_string(s: str) -> bytes:
-    bits = hash_mod.parse_plaintext_to_bits(s)
-    if bits == '':
-        bits = '0'
-    blocks = [bits[i:i+32] for i in range(0, len(bits), 32)]
+def hash_message(message: str) -> str:
+    """Вычисление хэша сообщения (256 бит в бинарном виде)"""
+    bits = parse_plaintext_to_bits(message)
+    blocks = list(chunk_bits(bits, 256))
     if len(blocks) == 0:
-        blocks = ['0' * 32]
-    if len(blocks[-1]) < 32:
-        blocks[-1] = blocks[-1].ljust(32, '0')
-    state = hash_mod.FIXED_IV
+        blocks = ['0' * 256]
+    if len(blocks[-1]) < 256:
+        blocks[-1] = blocks[-1].ljust(256, '0')
+    state = FIXED_IV_BITS
     for blk in blocks:
-        state = hash_mod.compress32(state, blk, verbose=False)
-    state_int = int(state, 2)
-    return state_int.to_bytes(4, 'big') 
+        state = compress256(state, blk)
+    return state
 
-def generate_rsa_keys():
-    private_key = rsa.generate_private_key(
-        public_exponent=65537,
-        key_size=2048,
-        backend=default_backend()
-    )
-    public_key = private_key.public_key()
-    return private_key, public_key
 
-private_key, public_key = generate_rsa_keys()
+def sign_message():
+    print("\n=== Подпись сообщения ===")
+    M = input("Введите сообщение (M): ").strip()
+    # Хэшируем сообщение
+    H_M = hash_message(M)
+    H_int = int(H_M, 2)
+    print(f"\nХэш сообщения (H(M)) = {format(H_int, '064x')}")
 
-def pem_public_key():
-    return public_key.public_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PublicFormat.SubjectPublicKeyInfo
-    )
+    # Генерируем ключи RSA
+    print("\nГенерация RSA ключей...")
+    from rsa import generate_prime, gcd, mod_inverse
+    import random, math
 
-def pem_private_key():
-    return private_key.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.PKCS8,
-        encryption_algorithm=serialization.NoEncryption()
-    )
+    p = generate_prime()
+    q = generate_prime()
+    while q == p:
+        q = generate_prime()
 
-def sign_message(msg_str: str) -> bytes:
-    h_bytes = compute_hash_bytes_from_input_string(msg_str)
-    signature = private_key.sign(
-        h_bytes,
-        padding.PKCS1v15(),
-        hashes.SHA256()
-    )
-    return signature
+    n = p * q
+    phi = (p - 1) * (q - 1)
+    e = random.randrange(2, phi)
+    while gcd(e, phi) != 1:
+        e = random.randrange(2, phi)
+    d = mod_inverse(e, phi)
 
-def verify_message(msg_str: str, signature: bytes) -> bool:
-    h_bytes = compute_hash_bytes_from_input_string(msg_str)
-    try:
-        public_key.verify(
-            signature,
-            h_bytes,
-            padding.PKCS1v15(),
-            hashes.SHA256()
-        )
-        return True
-    except Exception:
-        return False
-    
-def to_hex(b: bytes) -> str:
-    return binascii.hexlify(b).decode()
+    print(f"\nОткрытый ключ: {e},{n}")
+    print(f"Закрытый ключ: {d},{n}")
 
-def from_hex(s: str) -> bytes:
-    return binascii.unhexlify(s.strip())
+    # Подпись: Q = (H(M))^d mod n
+    Q = mod_pow(H_int, d, n)
+    print(f"\nПодпись (Q) = {Q}\n")
 
-def run_interactive():
-    print("=== Утилита ЭЦП (используется твой hash_func) ===")
-    print("Публичный ключ (PEM), поделись им с проверяющей стороной:")
-    print(pem_public_key().decode())
+    print("=== Результат ===")
+    print(f"M = {M}")
+    print(f"Q = {Q}")
+    print(f"Открытый ключ (для проверки): {e},{n}")
+    print(f"Закрытый ключ (для подписи): {d},{n}")
+    print("============================\n")
+
+
+def verify_signature():
+    print("\n=== Проверка подписи ===")
+    M = input("Введите сообщение (M): ").strip()
+    Q = int(input("Введите подпись (Q): ").strip())
+    e, n = map(int, input("Введите открытый ключ (e,n): ").split(','))
+
+    # Вычисляем хэш сообщения
+    H_M = hash_message(M)
+    H_int = int(H_M, 2)
+
+    # Проверяем подпись: H(M) == (Q^e mod n)
+    decrypted_hash = mod_pow(Q, e, n)
+
+    print(f"\nВычисленный хэш (H(M)) = {H_int}")
+    print(f"Расшифрованная подпись (Q^e mod n) = {decrypted_hash}")
+
+    if H_int == decrypted_hash:
+        print("\n✅ Подпись ВЕРНА — сообщение не изменено.")
+    else:
+        print("\n❌ Подпись НЕВЕРНА — сообщение подделано или неверный ключ.")
+
+
+def main():
+    print("=== Консольное приложение ЭЦП ===")
+
     while True:
         print("\nВыберите действие:")
-        print(" 1 - Подписать документ (ввод сообщения -> получаем подпись)")
-        print(" 2 - Проверить подпись (ввод сообщения + подпись -> проверка)")
-        print(" 3 - Выйти")
-        choice = input("Введите 1/2/3: ").strip()
-        if choice == '1':
-            msg = input("Введите сообщение (любой формат: текст / DEC / 0xHEX / бинарно):\n")
-            h_bytes = compute_hash_bytes_from_input_string(msg)
-            print(f"Хеш (32 бита) в hex: {to_hex(h_bytes)}")
-            sig = sign_message(msg)
-            print("Подпись (hex):")
-            print(to_hex(sig))
-            print("\nПодпись сгенерирована.")
-        elif choice == '2':
-            msg = input("Введите сообщение для проверки:\n")
-            sig_hex = input("Введите подпись (hex):\n").strip()
-            try:
-                sig = from_hex(sig_hex)
-            except Exception:
-                print("Ошибка: подпись должна быть в hex-формате (только 0-9a-f).")
-                continue
-            ok = verify_message(msg, sig)
-            if ok:
-                print("Проверка пройдена — подпись корректна.")
-            else:
-                print("Проверка НЕ пройдена — подпись не соответствует сообщению.")
-        elif choice == '3':
-            print("Выход.")
-            break
-        else:
-            print("Неправильный выбор. Введите 1, 2 или 3.")
+        print("1 - Подписать сообщение")
+        print("2 - Проверить подпись")
+        print("3 - Выход")
 
-if __name__ == '__main__':
-    try:
-        run_interactive()
-    except KeyboardInterrupt:
-        print("\nПрервано пользователем. Выход.")
-        sys.exit(0)
+        choice = input("Ваш выбор: ").strip()
+
+        if choice == '1':
+            sign_message()
+        elif choice == '2':
+            verify_signature()
+        elif choice == '3':
+            print("Выход из программы.")
+            sys.exit(0)
+        else:
+            print("Неверный выбор, попробуйте снова.")
+
+
+if __name__ == "__main__":
+    main()

@@ -49,17 +49,20 @@ def spn_encrypt_8bit(P: int, K: int) -> int:
     ciphertext_bits = C2 + C4
     return int(ciphertext_bits, 2)
 
-def compress32(state32: str, block32: str, verbose: bool=False) -> str:
-    assert len(state32) == 32 and len(block32) == 32
+def compress256(state256: str, block256: str, verbose: bool=False) -> str:
+    """Компрессионная функция для 256-битных данных (8 блоков по 32 бита)"""
+    assert len(state256) == 256 and len(block256) == 256
     out_bytes = []
-    for i, (s_chunk, b_chunk) in enumerate(zip(chunk_bits(state32, 8), chunk_bits(block32, 8))):
+    # Обрабатываем по 8 бит (всего 32 байта = 256 бит)
+    for i, (s_chunk, b_chunk) in enumerate(zip(chunk_bits(state256, 8), chunk_bits(block256, 8))):
         s_int = int(s_chunk, 2)
         b_int = int(b_chunk, 2)
         out_int = spn_encrypt_8bit(s_int, b_int)
         out_bytes.append(format(out_int, '08b'))
+
     tmp = ''.join(out_bytes)
-    new_state_int = int(tmp, 2) ^ int(state32, 2) ^ int(block32, 2)
-    new_state = format(new_state_int, '032b')
+    new_state_int = int(tmp, 2) ^ int(state256, 2) ^ int(block256, 2)
+    new_state = format(new_state_int, '0256b')
     return new_state
 
 def parse_plaintext_to_bits(s: str) -> str:
@@ -86,12 +89,15 @@ def parse_plaintext_to_bits(s: str) -> str:
     b = s.encode('utf-8')
     return bytes_to_bits(b)
 
-# === Фиксированный IV ===
-FIXED_IV = "11110000010101010000111111000000"  # 32 бита
+# === Фиксированный IV (256 бит, в hex) ===
+FIXED_IV_HEX = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+FIXED_IV_BITS = bytes_to_bits(bytes.fromhex(FIXED_IV_HEX))
+assert len(FIXED_IV_BITS) == 256, "IV должен быть длиной 256 бит"
 
 def run_interactive():
-    print("=== Hashervon (интерактивное хэширование) ===")
-    print(f"Фиксированный IV: {FIXED_IV} (0x{format(int(FIXED_IV,2),'08x')})")
+    print("=== Hashervon (интерактивное хэширование, 256-бит IV) ===")
+#    print(f"Фиксированный IV (hex): {FIXED_IV_HEX}")
+#    print(f"Фиксированный IV (bin): {FIXED_IV_BITS}")
 
     while True:
         print("\nВыберите действие:")
@@ -105,29 +111,29 @@ def run_interactive():
             if bits == '':
                 print("Пустой ввод — ничего хешировать.")
                 continue
-            blocks = list(chunk_bits(bits, 32))
+            blocks = list(chunk_bits(bits, 256))
             if len(blocks) == 0:
-                blocks = ['0'*32]
-            if len(blocks[-1]) < 32:
-                blocks[-1] = blocks[-1].ljust(32, '0')
+                blocks = ['0'*256]
+            if len(blocks[-1]) < 256:
+                blocks[-1] = blocks[-1].ljust(256, '0')
             print(f"Исходные биты (len={len(bits)}): {bits}")
-            print(f"Количество 32-бит блоков: {len(blocks)}")
+            print(f"Количество 256-бит блоков: {len(blocks)}")
 
-            state = FIXED_IV
+            state = FIXED_IV_BITS
             for idx, blk in enumerate(blocks, start=1):
                 print(f"\n--- Блок {idx}/{len(blocks)} ---")
-                print(f" block = {blk} (0x{format(int(blk,2),'08x')})")
-                print(f" state = {state} (0x{format(int(state,2),'08x')})")
-                state = compress32(state, blk, verbose=True)
-                print(f" new state = {state} (0x{format(int(state,2),'08x')})")
+                print(f" block = {blk} (0x{format(int(blk,2),'064x')})")
+                print(f" state = {state} (0x{format(int(state,2),'064x')})")
+                state = compress256(state, blk, verbose=True)
+                print(f" new state = {state} (0x{format(int(state,2),'064x')})")
 
             print("\n=== Хэширование завершено ===")
-            print(f"IV (фиксированный): {FIXED_IV}  (0x{format(int(FIXED_IV,2),'08x')})")
+            print(f"IV (фиксированный): {FIXED_IV_HEX}")
             print(f"Final hash (bin):  {state}")
-            print(f"Final hash (hex):  0x{format(int(state,2),'08x')}")
+            print(f"Final hash (hex):  {format(int(state,2),'064x')}")
 
         elif choice == '2':
-            print("Выход. Пока.")
+            print("Выход.")
             sys.exit(0)
         else:
             print("Неправильный выбор, введите 1 или 2.")
