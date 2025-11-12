@@ -1,4 +1,17 @@
-from  cipher_function import generate_key,generate_iv,generate_round_keys,bits_to_hex,bits_to_text,ecb_decrypt,ecb_encrypt,cbc_encrypt,cbc_decrypt,detect_and_convert_to_bits,pkcs7_pad,pkcs7_unpad,hex_to_bits
+from  cipher_function import (
+    generate_key,
+    generate_iv,
+    generate_round_keys,
+    bits_to_hex,
+    bits_to_text,
+    ecb_decrypt,
+    ecb_encrypt,
+    cbc_encrypt,
+    cbc_decrypt,
+    detect_and_convert_to_bits,
+    pkcs7_pad,
+    pkcs7_unpad,
+    hex_to_bits)
 
 
 def main():

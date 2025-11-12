@@ -1,94 +1,70 @@
-def to_bits(x, width=8):
-    return format(x, f'0{width}b')
+from cipher_function import (
+    generate_key,
+    generate_round_keys,
+    pkcs7_pad,
+    pkcs7_unpad,
+    bits_to_hex,
+    hex_to_bits,
+    bits_to_text,
+    text_to_bits,
+    feistel_encrypt_block,
+    feistel_decrypt_block,
+    xor_bits
+)
 
-def from_bits(bstr):
-    return int(bstr, 2)
 
-# --- S-box ---
-SBOX = {
-    "00": "10",
-    "01": "00",
-    "10": "11",
-    "11": "01"
-}
+# --- Шифрование одного блока ---
+def encrypt_block(block_bits, round_keys):
+    return feistel_encrypt_block(block_bits, round_keys)
 
-def sbox_substitution(bits4):
-    pairs = [bits4[0:2], bits4[2:4]]
-    out = []
-    for p in pairs:
-        out.append(SBOX[p])
-    return ''.join(out)
+# --- Основные функции ECB ---
+def encrypt_ecb(plaintext_bits, key_bits):
+    round_keys = generate_round_keys(key_bits, num_rounds=10, round_key_size=256)
+    padded = pkcs7_pad(plaintext_bits, 512)
+    ciphertext_bits = ''
+    for i in range(0, len(padded), 512):
+        block = padded[i:i + 512]
+        ciphertext_bits += encrypt_block(block, round_keys)
+    return ciphertext_bits
 
-def permutation(bits4):
-    return bits4[1] + bits4[0] + bits4[3] + bits4[2]
+def decrypt_ecb(ciphertext_bits, key_bits):
+    round_keys = generate_round_keys(key_bits, num_rounds=10, round_key_size=256)
+    plain_padded = ''
+    for i in range(0, len(ciphertext_bits), 512):
+        block = ciphertext_bits[i:i + 512]
+        if len(block) < 512:
+            block = block.ljust(512, '0')
+        plain_padded += feistel_decrypt_block(block, round_keys)
+    return pkcs7_unpad(plain_padded)
 
-def f_function(L4, K4):
-    xor_res = format(int(L4, 2) ^ int(K4, 2), '04b')
-    s_out = sbox_substitution(xor_res)
-    return permutation(s_out)
+# --- CBC режим ---
+def encrypt_cbc(plaintext_bits, key_bits, iv_bits):
+    round_keys = generate_round_keys(key_bits, num_rounds=10, round_key_size=256)
+    padded = pkcs7_pad(plaintext_bits, 512)
+    ciphertext_bits = ''
+    prev_block = iv_bits
+    for i in range(0, len(padded), 512):
+        block = padded[i:i + 512]
+        xored = xor_bits(block, prev_block)
+        enc_block = encrypt_block(xored, round_keys)
+        ciphertext_bits += enc_block
+        prev_block = enc_block
+    return ciphertext_bits
 
-def feistel_round_apply(L4, R4, K4):
-    f_out = f_function(L4, K4)
-    new_L = format(int(f_out, 2) ^ int(R4, 2), '04b')
-    new_R = L4
-    return new_L, new_R
+def decrypt_cbc(ciphertext_bits, key_bits, iv_bits):
+    round_keys = generate_round_keys(key_bits, num_rounds=10, round_key_size=256)
+    plain_padded = ''
+    prev_block = iv_bits
+    for i in range(0, len(ciphertext_bits), 512):
+        block = ciphertext_bits[i:i + 512]
+        if len(block) < 512:
+            block = block.ljust(512, '0')
+        dec_block = feistel_decrypt_block(block, round_keys)
+        plain_padded += xor_bits(dec_block, prev_block)
+        prev_block = block
+    return pkcs7_unpad(plain_padded)
 
-def feistel_round_unapply(L_cur, R_cur, K4):
-    prev_L = R_cur
-    f_out = f_function(prev_L, K4)
-    prev_R = format(int(f_out, 2) ^ int(L_cur, 2), '04b')
-    return prev_L, prev_R
-
-def encrypt_half(byte8_bits, subkeys):
-    L, R = byte8_bits[:4], byte8_bits[4:]
-    for k in subkeys:
-        L, R = feistel_round_apply(L, R, k)
-    return L + R
-
-def decrypt_half(byte8_bits, subkeys):
-    L, R = byte8_bits[:4], byte8_bits[4:]
-    for k in reversed(subkeys):
-        L, R = feistel_round_unapply(L, R, k)
-    return L + R
-
-def encrypt_16bit_block(block16_int, key_bits_str):
-    block_bits = to_bits(block16_int, 16)
-    left8, right8 = block_bits[:8], block_bits[8:]
-    subkeys = [key_bits_str[i:i+4] for i in range(0, len(key_bits_str), 4)]
-    enc_left = encrypt_half(left8, subkeys)
-    enc_right = encrypt_half(right8, subkeys)
-    return enc_left + enc_right
-
-def decrypt_16bit_block(cipher16_bits_str, key_bits_str):
-    left8, right8 = cipher16_bits_str[:8], cipher16_bits_str[8:]
-    subkeys = [key_bits_str[i:i+4] for i in range(0, len(key_bits_str), 4)]
-    dec_right = decrypt_half(right8, subkeys)
-    dec_left = decrypt_half(left8, subkeys)
-    return dec_left + dec_right
-
-def detect_and_convert_to_bits(user_input):
-    if all(ch in '01' for ch in user_input):
-        return user_input
-    if user_input.isdigit():
-        val = int(user_input)
-        return format(val, 'b')
-    bits = ''.join(format(ord(c), '08b') for c in user_input)
-    return bits
-
-def bits_to_text(bits):
-    chars = []
-    for i in range(0, len(bits), 8):
-        byte = bits[i:i+8]
-        if len(byte) < 8:
-            continue
-        chars.append(chr(int(byte, 2)))
-    return ''.join(chars)
-
-def pad_bits(bits, block_size=16):
-    if len(bits) % block_size != 0:
-        bits += '0' * (block_size - len(bits) % block_size)
-    return bits
-
+# --- Консольное меню ---
 def main():
     while True:
         print("\nМеню:")
@@ -98,42 +74,73 @@ def main():
         choice = input("Ваш выбор: ")
 
         if choice == "1":
-            key = input("Введите ключ (12 бит, строка из 0 и 1): ")
-            if len(key) != 12 or not all(c in '01' for c in key):
-                print("Ключ должен быть длиной 12 бит (только 0/1).")
+            key_bits = generate_key(512)
+            key_hex = bits_to_hex(key_bits)
+            print(f"\nСгенерирован ключ (512 бит = {len(key_hex) * 4} бит в HEX):\n{key_hex}\n")
+
+            mode = input("Выберите режим (ECB/CBC): ").strip().upper()
+            if mode not in ["ECB", "CBC"]:
+                print("Ошибка: допустимые режимы — ECB или CBC.")
                 continue
-            plaintext = input("Введите открытый текст (бинарный, десятичный или обычный): ")
-            bits = detect_and_convert_to_bits(plaintext)
-            bits = pad_bits(bits, 16)
 
-            cipher_bits = ""
-            for i in range(0, len(bits), 16):
-                block = bits[i:i+16]
-                block_int = int(block, 2)
-                enc_block = encrypt_16bit_block(block_int, key)
-                cipher_bits += enc_block
+            plaintext = input("Введите открытый текст: ")
+            bits = text_to_bits(plaintext)
 
-            print("Зашифрованный текст (биты):", cipher_bits)
+            if mode == "ECB":
+                cipher_bits = encrypt_ecb(bits, key_bits)
+                iv_hex = None
+            else:
+                iv_bits = generate_key(512)
+                iv_hex = bits_to_hex(iv_bits)
+                cipher_bits = encrypt_cbc(bits, key_bits, iv_bits)
+
+            cipher_hex = bits_to_hex(cipher_bits)
+            print("\nЗашифрованный текст (HEX):")
+            print(cipher_hex)
+            if iv_hex:
+                print("\nIV (HEX):")
+                print(iv_hex)
 
         elif choice == "2":
-            key = input("Введите ключ (12 бит, строка из 0 и 1): ")
-            if len(key) != 12 or not all(c in '01' for c in key):
-                print("Ключ должен быть длиной 12 бит (только 0/1).")
+            key_hex = input("Введите ключ (в HEX): ").strip()
+            try:
+                key_bits = hex_to_bits(key_hex)
+            except ValueError:
+                print("Ошибка: некорректный HEX ключ.")
                 continue
-            cipher_bits = input("Введите шифртекст (в битах): ")
-            if not all(c in '01' for c in cipher_bits):
-                print("Шифртекст должен быть в двоичном виде.")
+
+            if len(key_bits) != 512:
+                print("Ошибка: ключ должен быть 512 бит (128 HEX-символов).")
                 continue
-            cipher_bits = pad_bits(cipher_bits, 16)
 
-            plain_bits = ""
-            for i in range(0, len(cipher_bits), 16):
-                block = cipher_bits[i:i+16]
-                dec_block = decrypt_16bit_block(block, key)
-                plain_bits += dec_block
+            mode = input("Введите режим (ECB/CBC): ").strip().upper()
+            if mode not in ["ECB", "CBC"]:
+                print("Ошибка: допустимые режимы — ECB или CBC.")
+                continue
 
-            print("Расшифрованные биты:", plain_bits)
-            print("Как текст:", bits_to_text(plain_bits))
+            cipher_hex = input("Введите шифртекст (в HEX): ").strip()
+            try:
+                cipher_bits = hex_to_bits(cipher_hex)
+            except ValueError:
+                print("Ошибка: некорректный HEX шифртекст.")
+                continue
+
+            if mode == "CBC":
+                iv_hex = input("Введите IV (в HEX): ").strip()
+                try:
+                    iv_bits = hex_to_bits(iv_hex)
+                except ValueError:
+                    print("Ошибка: некорректный IV.")
+                    continue
+                if len(iv_bits) != 512:
+                    print("Ошибка: IV должен быть 512 бит.")
+                    continue
+                plain_bits = decrypt_cbc(cipher_bits, key_bits, iv_bits)
+            else:
+                plain_bits = decrypt_ecb(cipher_bits, key_bits)
+
+            print("\nРасшифрованный текст:")
+            print(bits_to_text(plain_bits))
 
         elif choice == "3":
             print("Выход.")

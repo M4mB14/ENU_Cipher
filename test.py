@@ -1,13 +1,18 @@
-from SPN import generate_round_keys, generate_key
-key = generate_key()
-#print(key)
-key1 = "1011000011010110100101100010011011101110100101100000101001100101110000001101101111011011000111100110000011110011110111100111111101011001110111111111001111000101001011000101011111110001001100010010000000111010001101100111001011001101000010110111001100001111"
-key2 = "1001000011010100010011100011111000000111111100010101010011011110001001111010110000101001001001000101011011010010001101011011010011101000100011100101000010100101011000111111010101101010101001100011100000001101110100110011100011011000101110100000110000001001"
+from cipher_function import generate_round_keys,pkcs7_pad
+from FNC_2 import feistel_round
 
-keyrange1 = generate_round_keys(key1,10)
-keyrange2 = generate_round_keys(key2,10)
+def text_to_bits(text):
+    return ''.join(format(ord(c), '08b') for c in text)
 
-if keyrange1 == keyrange2:
-    print("Нихуя")
-else:
-    print("Хуя")
+# --- Шифрование блока (512 бит) ---
+def feistel_encrypt_block(block_bits, round_keys):
+    print(len(block_bits))
+    print((round_keys))
+    L, R = block_bits[:256], block_bits[256:]
+    for k in round_keys:
+        L, R = feistel_round(L, R, k)
+    # финальный swap (для чётного количества раундов можно убрать, но лучше всегда)
+    return R + L
+
+#print(text_to_bits("Hello"))
+print(feistel_encrypt_block('',''))
