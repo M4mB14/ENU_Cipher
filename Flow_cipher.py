@@ -1,63 +1,21 @@
-import random
 import sys
+from cipher_function import (
+    bits_to_hex, 
+    hex_to_bits, 
+    bits_to_text, 
+    text_to_bits,
+    generate_key,
+    init_registers,
+    Flow_encrypt_decrypt
+)
 
-def detect_key_format(key_str: str) -> str:
-    key_str = key_str.strip()
-    if all(c in '01' for c in key_str):  # только 0 и 1
-        return "binary"
-    elif key_str.isdigit():  # десятичное число
-        return "decimal"
-    elif key_str.startswith("0x") or all(c in "0123456789abcdefABCDEF" for c in key_str):
-        return "hex"
-    else:
-        return "text"
 
-def to_binary(key_str: str) -> str:
-    fmt = detect_key_format(key_str)
-    if fmt == "binary":
-        return key_str
-    elif fmt == "decimal":
-        return bin(int(key_str))[2:]
-    elif fmt == "hex":
-        return bin(int(key_str, 16))[2:]
-    else:  # текст
-        return ''.join(format(ord(ch), '08b') for ch in key_str)
-
-def generate_taps(length: int, num_taps: int = 3) -> list:
-    positions = list(range(length))
-    return random.sample(positions, min(num_taps, length))
-
-def stream_encrypt(plaintext: str, key: str, taps: list) -> str:
-    cipher = []
-    key_bits = list(key)
-
-    for bit in plaintext:
-        xor_val = 0
-        for pos in taps:
-            xor_val ^= int(key_bits[pos])
-        
-        key_bit = xor_val
-
-        cipher_bit = str(int(bit) ^ key_bit)
-        cipher.append(cipher_bit)
-
-        key_bits = [str(key_bit)] + key_bits[:-1]
-
-    return ''.join(cipher)
-
-def stream_decrypt(ciphertext: str, key: str, taps: list) -> str:
-    return stream_encrypt(ciphertext, key, taps)
-
-def text_to_bits(text: str) -> str:
-    return ''.join(format(ord(ch), '08b') for ch in text)
-
-def bits_to_text(bits: str) -> str:
-    chars = []
-    for i in range(0, len(bits), 8):
-        byte = bits[i:i+8]
-        if len(byte) == 8:
-            chars.append(chr(int(byte, 2)))
-    return ''.join(chars)
+def a5_process(text: str, key_bits: str) -> str:
+    plaintext_bits = text_to_bits(text)
+    R1, R2, R3 = init_registers(key_bits)
+    ks = Flow_encrypt_decrypt(R1, R2, R3, len(plaintext_bits))
+    cipher_bits = ''.join(str(int(b) ^ int(k)) for b, k in zip(plaintext_bits, ks))
+    return cipher_bits
 
 def main():
     while True:
@@ -65,43 +23,36 @@ def main():
         print("1 - Зашифровать")
         print("2 - Расшифровать")
         print("3 - Выход")
-
         choice = input("Ваш выбор: ").strip()
-        
-        if choice == "1":
-            key_str = input("Введите ключ (текст, число, hex или двоичный): ")
-            key_bin = to_binary(key_str)
 
-            taps = generate_taps(len(key_bin))
-            print(f"Опорные позиции (taps): {taps}")
+        if choice == "1":
+            key_bits = generate_key(256)
+            key_hex = bits_to_hex(key_bits)
+            print(f"Сгенерированный ключ (hex): {key_hex}")
 
             text = input("Введите текст для шифрования: ")
-            plaintext = text_to_bits(text)
-
-            cipher = stream_encrypt(plaintext, key_bin, taps)
-            print("Зашифрованные биты:", cipher)
-            print("Шифротекст (в hex):", hex(int(cipher, 2))[2:])
+            cipher_bits = a5_process(text, key_bits)
+            cipher_hex = bits_to_hex(cipher_bits)
+            print(f"Шифртекст (hex): {cipher_hex}")
 
         elif choice == "2":
-            key_str = input("Введите ключ (текст, число, hex или двоичный): ")
-            key_bin = to_binary(key_str)
+            key_hex = input("Введите ключ (hex): ").strip()
+            cipher_hex = input("Введите шифртекст (hex): ").strip()
 
-            taps_str = input("Введите опорные позиции (через запятую): ")
-            taps = list(map(int, taps_str.split(",")))
-
-            cipher = input("Введите шифротекст (в битах): ").strip()
-
-            decrypted_bits = stream_decrypt(cipher, key_bin, taps)
-            decrypted_text = bits_to_text(decrypted_bits)
-
-            print("Расшифрованные биты:", decrypted_bits)
-            print("Расшифрованный текст:", decrypted_text)
+            key_bits = hex_to_bits(key_hex).zfill(256)
+            cipher_bits = hex_to_bits(cipher_hex)
+            n_bits = len(cipher_bits)
+            R1, R2, R3 = init_registers(key_bits)
+            ks = Flow_encrypt_decrypt(R1, R2, R3, n_bits)
+            plaintext_bits = ''.join(str(int(c) ^ int(k)) for c, k in zip(cipher_bits, ks))
+            plaintext = bits_to_text(plaintext_bits)
+            print(f"Расшифрованный текст: {plaintext}")
 
         elif choice == "3":
-            print("Выход из программы.")
+            print("Выход.")
             sys.exit(0)
         else:
-            print("Неверный ввод, попробуйте снова.")
+            print("Неверный выбор, попробуйте снова.")
 
 if __name__ == "__main__":
     main()

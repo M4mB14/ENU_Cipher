@@ -1,5 +1,17 @@
 import random
 
+
+####################################
+####        Constants           ####
+####################################
+
+R1_LEN, R2_LEN, R3_LEN = 19, 22, 23
+R1_TAPS = [13, 16, 17, 18]
+R2_TAPS = [20, 21]
+R3_TAPS = [7, 20, 21, 22]
+R1_SYNC, R2_SYNC, R3_SYNC = 8, 10, 10
+FN = "1100101010110010101011"
+
 ####################################
 ####          Boxes             ####
 ####################################
@@ -138,6 +150,7 @@ def aes_key_expansion(key_bits, num_rounds=10, round_key_size=128):
         round_keys.append(aes_key)
 
     return round_keys
+    
 
 ####################################
 ####        Utility             ####
@@ -296,6 +309,68 @@ def spn_decrypt_block(cipher_bits, round_keys, round_key_size=128, pbox_map=None
         blocks = new_blocks
     return ''.join(blocks)
 
+####################################
+####    flow_cipher Util        ####
+####################################
+
+def lfsr_shift(reg: list, taps: list) -> None:
+    new_bit = 0
+    for t in taps:
+        new_bit ^= reg[t]
+    reg.insert(0, new_bit)
+    reg.pop()
+
+def majority(a: int, b: int, c: int) -> int:
+    return (a & b) | (a & c) | (b & c)
+
+def init_registers(key_bits: str):
+    R1 = [0] * R1_LEN
+    R2 = [0] * R2_LEN
+    R3 = [0] * R3_LEN
+
+    for bit in key_bits:
+        b = int(bit)
+        R1[0] ^= b
+        R2[0] ^= b
+        R3[0] ^= b
+        lfsr_shift(R1, R1_TAPS)
+        lfsr_shift(R2, R2_TAPS)
+        lfsr_shift(R3, R3_TAPS)
+
+    for bit in FN:
+        b = int(bit)
+        R1[0] ^= b
+        R2[0] ^= b
+        R3[0] ^= b
+        lfsr_shift(R1, R1_TAPS)
+        lfsr_shift(R2, R2_TAPS)
+        lfsr_shift(R3, R3_TAPS)
+
+    for _ in range(100):
+        m = majority(R1[R1_SYNC], R2[R2_SYNC], R3[R3_SYNC])
+        if R1[R1_SYNC] == m:
+            lfsr_shift(R1, R1_TAPS)
+        if R2[R2_SYNC] == m:
+            lfsr_shift(R2, R2_TAPS)
+        if R3[R3_SYNC] == m:
+            lfsr_shift(R3, R3_TAPS)
+
+    return R1, R2, R3
+
+def Flow_encrypt_decrypt(R1, R2, R3, n_bits: int):
+    stream = []
+    for _ in range(n_bits):
+        m = majority(R1[R1_SYNC], R2[R2_SYNC], R3[R3_SYNC])
+        if R1[R1_SYNC] == m:
+            lfsr_shift(R1, R1_TAPS)
+        if R2[R2_SYNC] == m:
+            lfsr_shift(R2, R2_TAPS)
+        if R3[R3_SYNC] == m:
+            lfsr_shift(R3, R3_TAPS)
+
+        ks_bit = R1[0] ^ R2[0] ^ R3[0]
+        stream.append(ks_bit)
+    return ''.join(str(b) for b in stream)
 
 ####################################
 ####        SPN mode's          ####
